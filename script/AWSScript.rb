@@ -40,16 +40,12 @@ class Configuration
       })
     end
 
-    # Loading instances from
+    # Loading instances
     def load_instances options
-      if options[:instance] # an instance specified load that
-        @@instances = [options[:instance]]
-      else # loading the default file
-        begin
-          @@instances = File.open('instances.txt', 'r').map {|l| l.strip.downcase unless l.empty? || l.nil?}
-        rescue Errno::ENOENT
-          abort "Instances file doesn't exist"
-        end
+      if options[:instance]
+        @@instances = options[:instance]
+      else
+        @@instances = Aws::EC2::Client.new.describe_instances.reservations.map(&:instances).flatten.map(&:instance_id)
       end
     end
 
@@ -62,7 +58,7 @@ class EC2Instance
     @name = Hash[@instance.tags.map {|stuct| [stuct.to_h[:key], stuct.to_h[:value]]}]['Name'] # getting name from the tags
   end
 
-  # Stop the instance
+  # Start the instance
   def start
     @instance.start
     begin
@@ -75,30 +71,27 @@ class EC2Instance
 
   # Stop the instance
   def stop
-    if @instance.state.name == 'stopped'
-      puts "Instance #{@name or @instance.id} was already stopped"
-      return
-    else
-      @instance.stop
-      begin
-        @instance.wait_until_stopped
-        puts "Instance #{@name or @instance.id} stopped"
-      rescue Aws::Waiters::Errors::WaiterFailed => error
-        puts "Failed waiting for instance stopping: #{error.message}"
-      end
+    @instance.stop
+    begin
+      @instance.wait_until_stopped
+      puts "Instance #{@name or @instance.id} stopped"
+    rescue Aws::Waiters::Errors::WaiterFailed => error
+      puts "Failed waiting for instance stopping: #{error.message}"
     end
   end
 
   # Display the status of the instance
   def status
-    ip = @instance.public_ip_address
-    dns_name = @instance.public_dns_name
-    puts "Instance #{@name or @instance.id} is #{@instance.state.to_hash[:name]}"
-    if ip
-      puts "    IP address is #{ip}"
-      uri = URI.parse 'http://' + dns_name
-      response = Net::HTTP.get_response uri
-      puts '    Drupal is running' if response.code == '200' and response.body.include? "<span>Powered by <a href=\"https://www.drupal.org\">Drupal</a></span>"
+    state = @instance.state.to_hash[:name]
+    puts "Instance #{@name or @instance.id} is #{state}"
+    if state == 'running'
+      uri = URI.parse 'http://' + @instance.public_dns_name
+      begin
+        response = Net::HTTP.get_response uri
+      rescue
+        response = nil
+      end
+      puts '    Drupal is running' if response and response.code == '200' and response.body.include? "<span>Powered by <a href=\"https://www.drupal.org\">Drupal</a></span>"
     end
   end
 end
@@ -107,7 +100,7 @@ options = {}
 OptionParser.new do |opts|
   opts.banner = "Usage: script.rb [options]"
 
-  opts.on('-i', '--instance INSTANCE', 'Instance ID') { |v| options[:instance] = v }
+  opts.on('-i', '--instance i1, 12, i3', Array, 'Instance IDs') { |v| options[:instance] = v }
   opts.on('--start',  'Start the instances') { |v| options[:start] = v }
   opts.on('--stop',   'Stop the instances') { |v| options[:stop]  = v }
   opts.on('--status', 'Display the status of the instances')  { |v| options[:status]  = v }
