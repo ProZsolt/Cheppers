@@ -5,7 +5,7 @@ require 'net/http'
 require 'uri'
 require 'optparse'
 
-class Configuration
+class EC2
   class << self
 
     def setup options
@@ -49,6 +49,19 @@ class Configuration
       end
     end
 
+    # Create an instances
+    def createInstance count = 1
+      response = Aws::EC2::Client.new.run_instances(
+        dry_run: false,
+        image_id: 'ami-accff2b1',
+        min_count: count,
+        max_count: count,
+        instance_type: 't2.micro',
+        security_groups: ['default'],
+        key_name: 'AWSUbuntu'
+      )
+      puts "Instance #{ response.instances.map(&:instance_id).join ',' } is created"
+    end
   end
 end
 
@@ -80,6 +93,17 @@ class EC2Instance
     end
   end
 
+  # Terminate the instance
+  def stop
+    @instance.terminate
+    begin
+      @instance.wait_until_terminated
+      puts "Instance #{@name or @instance.id} terminated"
+    rescue Aws::Waiters::Errors::WaiterFailed => error
+      puts "Failed waiting for instance terminating: #{error.message}"
+    end
+  end
+
   # Display the status of the instance
   def status
     state = @instance.state.to_hash[:name]
@@ -103,22 +127,29 @@ OptionParser.new do |opts|
   opts.on('-i', '--instance i1, 12, i3', Array, 'Instance IDs') { |v| options[:instance] = v }
   opts.on('--start',  'Start the instances') { |v| options[:start] = v }
   opts.on('--stop',   'Stop the instances') { |v| options[:stop]  = v }
+  opts.on('--terminate',   'Terminate the instances') { |v| options[:terminate]  = v }
+  opts.on('--create',   'Create an instances') { |v| options[:create]  = v }
   opts.on('--status', 'Display the status of the instances')  { |v| options[:status]  = v }
 end.parse!
 
 if $0 == __FILE__
-  raise OptionParser::MissingArgument, "--start OR --stop OR --status" if options[:start].nil? && options[:stop].nil? && options[:status].nil?
+  raise OptionParser::MissingArgument, "--create OR --start OR --stop OR --terminate OR --status" if options[:create].nil? && options[:start].nil? && options[:stop].nil? && options[:terminate].nil? && options[:status].nil?
 end
 
-Configuration.setup options
-
-Configuration.instances.each do |instance|
-  i = EC2Instance.new instance
-  if options[:start]
-    i.start
-  elsif options[:stop]
-    i.stop
-  elsif options[:status]
-    i.status
+EC2.setup options
+if options[:create]
+  EC2.createInstance
+else
+  EC2.instances.each do |instance|
+    i = EC2Instance.new instance
+    if options[:start]
+      i.start
+    elsif options[:stop]
+      i.stop
+    elsif options[:terminate]
+      i.terminate
+    elsif options[:status]
+      i.status
+    end
   end
 end
