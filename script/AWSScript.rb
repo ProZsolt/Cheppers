@@ -9,44 +9,17 @@ class EC2
   class << self
 
     def setup options
-      @@config = Hash.new
-      load_config
-      config_aws
-      load_instances options
-    end
+      Aws.config.update({region: ENV['AWS_REGION'] || 'eu-central-1'})
 
-    def instances
-      @@instances
-    end
-
-    # Loading configuration from a file
-    def load_config
-      begin
-        @@config_file = File.open('../keys/rootkey.csv', 'r')
-      rescue Errno::ENOENT
-        abort "AWS key file doesn't exist."
-      end
-      @@config_file.readlines.each do |line|
-        /(\S+)(?:\s)*=(?:\s)*(\S+)/.match line.strip
-        @@config[$1.to_sym] = $2
-      end
-    end
-
-    # Configurating AWS
-    def config_aws
-      Aws.config.update({
-        region: @@config[:AWSRegion],
-        credentials: Aws::Credentials.new(@@config[:AWSAccessKeyId], @@config[:AWSSecretKey]),
-      })
-    end
-
-    # Loading instances
-    def load_instances options
       if options[:instance]
         @@instances = options[:instance]
       else
         @@instances = Aws::EC2::Client.new.describe_instances.reservations.map(&:instances).flatten.map(&:instance_id)
       end
+    end
+
+    def instances
+      @@instances
     end
 
     # Create an instances
