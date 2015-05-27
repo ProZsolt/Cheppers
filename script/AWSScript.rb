@@ -26,7 +26,7 @@ class EC2
     def createInstance count = 1
       response = Aws::EC2::Client.new.run_instances(
         dry_run: false,
-        image_id: 'ami-accff2b1',
+        image_id: 'ami-accff2b1', # Ubuntu 14.04 64bit
         min_count: count,
         max_count: count,
         instance_type: 't2.micro',
@@ -67,7 +67,7 @@ class EC2Instance
   end
 
   # Terminate the instance
-  def stop
+  def terminate
     @instance.terminate
     begin
       @instance.wait_until_terminated
